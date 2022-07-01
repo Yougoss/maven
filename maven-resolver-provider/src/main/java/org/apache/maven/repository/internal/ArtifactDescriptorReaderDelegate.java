@@ -19,12 +19,7 @@ package org.apache.maven.repository.internal;
  * under the License.
  */
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 import org.apache.maven.model.DependencyManagement;
 import org.apache.maven.model.DistributionManagement;
@@ -51,6 +46,9 @@ import org.eclipse.aether.resolution.ArtifactDescriptorResult;
  */
 public class ArtifactDescriptorReaderDelegate
 {
+    private static Map<String, Artifact> artifactCache = Collections.synchronizedMap(new WeakHashMap<String, Artifact>());
+    private static Map<String, Dependency> dependencyCache = Collections.synchronizedMap(new WeakHashMap<String, Dependency>());
+
     public void populateResult( RepositorySystemSession session, ArtifactDescriptorResult result, Model model )
     {
         ArtifactTypeRegistry stereotypes = session.getArtifactTypeRegistry();
@@ -114,9 +112,18 @@ public class ArtifactDescriptorReaderDelegate
             props = Collections.singletonMap( ArtifactProperties.LOCAL_PATH, dependency.getSystemPath() );
         }
 
-        Artifact artifact =
-            new DefaultArtifact( dependency.getGroupId(), dependency.getArtifactId(), dependency.getClassifier(), null,
-                                 dependency.getVersion(), props, stereotype );
+        String key = getDepCacheKey(dependency);
+
+        Artifact artifact;
+        if (artifactCache.get(key) != null) {
+            artifact = artifactCache.get(key);
+            artifact = artifact.setProperties(props);
+        } else {
+             artifact =
+                    new DefaultArtifact( dependency.getGroupId(), dependency.getArtifactId(), dependency.getClassifier(), null,
+                            dependency.getVersion(), props, stereotype );
+            artifactCache.put(key, artifact);
+        }
 
         List<Exclusion> exclusions = new ArrayList<>( dependency.getExclusions().size() );
         for ( org.apache.maven.model.Exclusion exclusion : dependency.getExclusions() )
@@ -124,11 +131,19 @@ public class ArtifactDescriptorReaderDelegate
             exclusions.add( convert( exclusion ) );
         }
 
-        Dependency result = new Dependency( artifact, dependency.getScope(),
-                                            dependency.getOptional() != null
-                                                ? dependency.isOptional()
-                                                : null,
-                                            exclusions );
+
+        Dependency result;
+        if (dependencyCache.get(key) != null) {
+            result = dependencyCache.get(key);
+            result = result.setExclusions(exclusions);
+        } else {
+            result = new Dependency( artifact, dependency.getScope(),
+                    dependency.getOptional() != null
+                            ? dependency.isOptional()
+                            : null,
+                    exclusions );
+            dependencyCache.put(key, result);
+        }
 
         return result;
     }
@@ -153,5 +168,12 @@ public class ArtifactDescriptorReaderDelegate
             props.put( ArtifactProperties.DOWNLOAD_URL, downloadUrl );
             result.setArtifact( artifact.setProperties( props ) );
         }
+    }
+
+    private String getDepCacheKey(org.apache.maven.model.Dependency dependency) {
+        return dependency.getGroupId() + ":" + dependency.getArtifactId() + ":" +
+                (dependency.getClassifier()!=null ? dependency.getClassifier() : "") +
+                ":" + dependency.getVersion() + ":" + dependency.getType() + ":" + dependency.getScope() +
+                ":" + (dependency.getOptional() != null ? dependency.isOptional() : null);
     }
 }
