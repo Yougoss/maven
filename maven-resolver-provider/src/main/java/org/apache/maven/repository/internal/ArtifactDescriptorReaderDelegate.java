@@ -46,7 +46,6 @@ import org.eclipse.aether.resolution.ArtifactDescriptorResult;
  */
 public class ArtifactDescriptorReaderDelegate
 {
-    private static Map<String, Artifact> artifactCache = Collections.synchronizedMap(new WeakHashMap<String, Artifact>());
     private static Map<String, Dependency> dependencyCache = Collections.synchronizedMap(new WeakHashMap<String, Dependency>());
 
     public void populateResult( RepositorySystemSession session, ArtifactDescriptorResult result, Model model )
@@ -112,18 +111,9 @@ public class ArtifactDescriptorReaderDelegate
             props = Collections.singletonMap( ArtifactProperties.LOCAL_PATH, dependency.getSystemPath() );
         }
 
-        String key = getDepCacheKey(dependency);
+        String depCacheKeykey = getDepCacheKey(dependency);
 
-        Artifact artifact;
-        if (artifactCache.get(key) != null) {
-            artifact = artifactCache.get(key);
-            artifact = artifact.setProperties(props);
-        } else {
-             artifact =
-                    new DefaultArtifact( dependency.getGroupId(), dependency.getArtifactId(), dependency.getClassifier(), null,
-                            dependency.getVersion(), props, stereotype );
-            artifactCache.put(key, artifact);
-        }
+        Dependency result;
 
         List<Exclusion> exclusions = new ArrayList<>( dependency.getExclusions().size() );
         for ( org.apache.maven.model.Exclusion exclusion : dependency.getExclusions() )
@@ -131,18 +121,19 @@ public class ArtifactDescriptorReaderDelegate
             exclusions.add( convert( exclusion ) );
         }
 
-
-        Dependency result;
-        if (dependencyCache.get(key) != null) {
-            result = dependencyCache.get(key);
+        if (dependencyCache.get(depCacheKeykey) != null && props == null) {
+            result = dependencyCache.get(depCacheKeykey);
             result = result.setExclusions(exclusions);
-        } else {
+        } else{
+            Artifact artifact =
+                    new DefaultArtifact( dependency.getGroupId(), dependency.getArtifactId(), dependency.getClassifier(), null,
+                            dependency.getVersion(), props, stereotype );
             result = new Dependency( artifact, dependency.getScope(),
                     dependency.getOptional() != null
                             ? dependency.isOptional()
                             : null,
                     exclusions );
-            dependencyCache.put(key, result);
+            dependencyCache.put(depCacheKeykey, result);
         }
 
         return result;
