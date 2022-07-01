@@ -19,13 +19,7 @@ package org.apache.maven;
  * under the License.
  */
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 
 import org.apache.maven.artifact.handler.ArtifactHandler;
 import org.apache.maven.artifact.handler.DefaultArtifactHandler;
@@ -59,6 +53,7 @@ import org.eclipse.aether.util.repository.AuthenticationBuilder;
  */
 public class RepositoryUtils
 {
+    private static Map<String, Dependency> dependencyCache = Collections.synchronizedMap(new WeakHashMap<String, Dependency>());
 
     private static String nullify( String string )
     {
@@ -312,9 +307,9 @@ public class RepositoryUtils
             props = Collections.singletonMap( ArtifactProperties.LOCAL_PATH, dependency.getSystemPath() );
         }
 
-        Artifact artifact =
-            new DefaultArtifact( dependency.getGroupId(), dependency.getArtifactId(), dependency.getClassifier(), null,
-                                 dependency.getVersion(), props, stereotype );
+        String depCacheKeykey = getDepCacheKey(dependency);
+
+        Dependency result;
 
         List<Exclusion> exclusions = new ArrayList<>( dependency.getExclusions().size() );
         for ( org.apache.maven.model.Exclusion exclusion : dependency.getExclusions() )
@@ -322,14 +317,30 @@ public class RepositoryUtils
             exclusions.add( toExclusion( exclusion ) );
         }
 
-        Dependency result = new Dependency( artifact,
-                                            dependency.getScope(),
-                                            dependency.getOptional() != null
-                                                ? dependency.isOptional()
-                                                : null,
-                                            exclusions );
+        if (dependencyCache.get(depCacheKeykey) != null && props == null) {
+            result = dependencyCache.get(depCacheKeykey);
+            result = result.setExclusions(exclusions);
+        } else {
+            Artifact artifact =
+                    new DefaultArtifact( dependency.getGroupId(), dependency.getArtifactId(), dependency.getClassifier(), null,
+                            dependency.getVersion(), props, stereotype );
+            result = new Dependency( artifact,
+                    dependency.getScope(),
+                    dependency.getOptional() != null
+                            ? dependency.isOptional()
+                            : null,
+                    exclusions );
+        }
+        dependencyCache.put(depCacheKeykey, result);
 
         return result;
+    }
+
+    private static String getDepCacheKey(org.apache.maven.model.Dependency dependency) {
+        return dependency.getGroupId() + ":" + dependency.getArtifactId() + ":" +
+                (dependency.getClassifier()!=null ? dependency.getClassifier() : "") +
+                ":" + dependency.getVersion() + ":" + dependency.getType() + ":" + dependency.getScope() +
+                ":" + (dependency.getOptional() != null ? dependency.isOptional() : null);
     }
 
     private static Exclusion toExclusion( org.apache.maven.model.Exclusion exclusion )
